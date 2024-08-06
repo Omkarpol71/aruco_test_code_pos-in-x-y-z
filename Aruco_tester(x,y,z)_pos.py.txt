@@ -1,0 +1,114 @@
+import cv2
+import numpy as np
+import serial
+import time
+
+def main():
+    # Initialize serial communication with Arduino
+    try:
+        arduino = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
+        time.sleep(2)  # Wait for the connection to initialize
+        print("Connected to Arduino")
+    except Exception as e:
+        print(f"Error: Could not open serial port. {e}")
+        return
+    
+    # Load the predefined dictionary
+    aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)
+    
+    # Initialize the detector parameters using default values
+    parameters = cv2.aruco.DetectorParameters_create()
+    
+    # Use the calibration values obtained from the calibration process
+    camera_matrix = np.array([[349.68423714, 0, 316.2698084],
+                              [0, 347.47076962, 233.33417647],
+                              [0, 0, 1]])
+    
+    dist_coeffs = np.array([-0.19349216, -0.00234194, -0.00299255, 0.00120915, 0.04231135])
+    
+    # Define the size of the Aruco marker (in meters)
+    marker_length = 0.03  # 3 cm
+    
+    # Conversion factor from pixels to millimeters
+    pixel_to_mm = 0.5  
+    
+    # Start capturing video from the camera
+    cap = cv2.VideoCapture(1)
+    
+    if not cap.isOpened():
+        print("Error: Could not open video capture.")
+        return
+    
+    while True:
+        if arduino.in_waiting > 0:
+            line = arduino.readline().decode('utf-8').rstrip()
+            print(line)  # Print the data received from the Arduino
+        
+        # Capture frame-by-frame
+        ret, frame = cap.read()
+        
+        if not ret:
+            print("Error: Could not read frame.")
+            break
+        
+        # Convert the frame to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Detect the markers in the grayscale frame
+        corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
+        
+        if ids is not None:
+            # Draw detected markers
+            cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+            
+            # Estimate the pose of each marker
+            rvecs, tvecs = cv2.aruco.estimatePoseSingleMarkers(corners, marker_length, camera_matrix, dist_coeffs)
+            
+            for i in range(len(ids)):
+                # Draw axis for each marker
+                cv2.aruco.drawAxis(frame, camera_matrix, dist_coeffs, rvecs[i], tvecs[i], 0.1)
+                
+                # Get the center of the marker
+                center = np.mean(corners[i][0], axis=0)
+                
+                # Convert coordinates to millimeters
+                x_mm = center[0] * pixel_to_mm
+                y_mm = center[1] * pixel_to_mm
+                
+                # Get the distance (z position) of the marker from the camera in millimeters
+                z_distance_mm = tvecs[i][0][2] * 1000
+                
+                print(f'Marker center (mm): x = {x_mm}, y = {y_mm}')
+                print(f'Distance from camera (mm): z = {z_distance_mm:.2f}')
+                
+                # Send the center coordinates and distance to Arduino in millimeters
+                data = f'{x_mm:.2f},{y_mm:.2f},{z_distance_mm:.2f}\n'
+                try:
+                    arduino.write(data.encode())
+                    print(f"Sent to Arduino: {data}")
+                except Exception as e:
+                    print(f"Error: Could not send data to Arduino. {e}")
+                
+                # Draw the center on the frame
+                cv2.circle(frame, tuple(center.astype(int)), 5, (0, 255, 0), -1)
+        
+        # Display the resulting frame
+        cv2.imshow('Aruco Marker Detector', frame)
+        
+        # Break the loop if 'q' key is pressed
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+        # Clear the serial monitor if 'c' key is pressed
+        if cv2.waitKey(1) & 0xFF == ord('c'):
+            arduino.write("CLEAR\n".encode())
+            print("Sent CLEAR command to Arduino")
+    
+    # When everything done, release the capture and close windows
+    cap.release()
+    cv2.destroyAllWindows()
+    arduino.close()
+
+if __name__ == '__main__':
+    main()
+

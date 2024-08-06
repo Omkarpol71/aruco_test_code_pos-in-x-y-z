@@ -1,0 +1,28 @@
+import cv2
+import os
+
+# Path to save calibration images
+save_path = '/home/pi/img_calibrate_camera'
+
+# Create the directory if it does not exist
+if not os.path.exists(save_path):
+    os.makedirs(save_path)
+
+cap = cv2.VideoCapture(1)
+
+if not cap.isOpened():
+    print("Error: Could not open video capture.")
+    exit()
+
+for i in range(50):  # Capture 20 images
+    ret, frame = cap.read()
+    if not ret:
+        print("Error: Could not read frame.")
+        break
+    cv2.imshow('Calibration Image', frame)
+    cv2.imwrite(os.path.join(save_path, f'calibration_image_{i}.png'), frame)  # Save image
+    cv2.waitKey(500)  # Wait for 500ms
+
+cap.release()
+cv2.destroyAllWindows()
+

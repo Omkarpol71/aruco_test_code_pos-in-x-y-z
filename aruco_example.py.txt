@@ -1,0 +1,52 @@
+import cv2
+import cv2.aruco as aruco
+import serial
+import time
+
+# Initialize serial communication
+ser = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)  # Update with your serial port
+time.sleep(2)  # Allow time for the serial connection to initialize
+
+def detect_aruco(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    aruco_dict = aruco.Dictionary_get(aruco.DICT_6X6_250)
+    parameters = aruco.DetectorParameters_create()
+    corners, ids, _ = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
+    
+    if ids is not None:
+        aruco.drawDetectedMarkers(img, corners, ids)
+        return corners[0][0], ids[0]
+    return None, None
+
+def calculate_center(corners):
+    center_x = (corners[0][0] + corners[2][0]) / 2
+    center_y = (corners[0][1] + corners[2][1]) / 2
+    return center_x, center_y
+
+def send_to_arduino(x, y):
+    command = f'{x},{y}\n'
+    ser.write(command.encode())
+
+cap = cv2.VideoCapture(0)
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    corners, aruco_id = detect_aruco(frame)
+    if corners is not None:
+        center_x, center_y = calculate_center(corners)
+        send_to_arduino(center_x, center_y)
+    
+    cv2.imshow('Frame', frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+ser.close()
+
+
+

@@ -1,0 +1,58 @@
+import cv2
+import numpy as np
+import glob
+import os
+
+# Define the dimensions of the checkerboard
+CHECKERBOARD = (9, 6)
+criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+
+# Prepare object points based on the actual size of the chessboard squares
+objp = np.zeros((CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
+objp[:, :2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2)
+
+# Arrays to store object points and image points from all the images
+objpoints = []
+imgpoints = []
+
+# Path to the directory where calibration images are saved
+save_path = '/home/pi/img_calibrate_camera'
+images = glob.glob(os.path.join(save_path, 'calibration_image_*.png'))
+
+if len(images) == 0:
+    print("No calibration images found. Please check the directory and image names.")
+    exit()
+
+for fname in images:
+    img = cv2.imread(fname)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    ret, corners = cv2.findChessboardCorners(gray, CHECKERBOARD, None)
+    
+    if ret:
+        objpoints.append(objp)
+        corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+        imgpoints.append(corners2)
+        
+        img = cv2.drawChessboardCorners(img, CHECKERBOARD, corners2, ret)
+        cv2.imshow('img', img)
+        cv2.waitKey(500)
+    else:
+        print(f"Checkerboard not detected in image: {fname}")
+
+cv2.destroyAllWindows()
+
+if len(objpoints) == 0 or len(imgpoints) == 0:
+    print("No checkerboard corners detected in any images. Please check the images and try again.")
+    exit()
+
+# Calibrate the camera
+ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+
+# Save the camera calibration results for future use
+np.save(os.path.join(save_path, 'camera_matrix.npy'), camera_matrix)
+np.save(os.path.join(save_path, 'dist_coeffs.npy'), dist_coeffs)
+
+print("Camera matrix : \n", camera_matrix)
+print("Distortion coefficients : \n", dist_coeffs)
+
